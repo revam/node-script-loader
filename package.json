@@ -1,0 +1,32 @@
+{
+  "name": "script-loader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Create startup/shutdown routines for scripts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "del-cli lib && tsc -p .",
+    "build:docs": ""
+  },
+  "keywords": [
+    "program",
+    "helper-class"
+  ],
+  "author": {
+    "name": "Mikal Stordal",
+    "email": "mikalstordal@gmail.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/configstore": "^2.1.1",
+    "@types/node": "^10.5.2",
+    "del-cli": "^1.1.0",
+    "tslint": "^5.10.0",
+    "typescript": "^2.9.2"
+  },
+  "dependencies": {
+    "configstore": "^3.1.2"
+  }
+}
