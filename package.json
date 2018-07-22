@@ -20,6 +20,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@types/commander": "^2.12.2",
     "@types/configstore": "^2.1.1",
     "@types/node": "^10.5.2",
     "del-cli": "^1.1.0",
@@ -27,6 +28,7 @@
     "typescript": "^2.9.2"
   },
   "dependencies": {
+    "commander": "^2.16.0",
     "configstore": "^3.1.2"
   }
 }

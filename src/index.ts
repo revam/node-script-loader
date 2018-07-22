@@ -3,7 +3,10 @@
  * Copyright (c) 2018 Mikal Stordal <mikalstordal@gmail.com>
  */
 
+import { Command } from "commander";
 import * as ConfigStore from "configstore";
+import { readdirSync } from "fs";
+import { join, resolve } from "path";
 
 const SymbolSettings = Symbol("settings");
 
@@ -239,6 +242,99 @@ export default class Program {
         typeof error === "object" && typeof error.exitCode === "number" && error.exitCode || 1 : 0,
       );
     }
+  }
+}
+
+/**
+ * Creates a CLI for multiple scripts using the same config store.
+ * @param scriptsRoot Folder containing scripts
+ * @param pkg Package configuration
+ * @param argv Arguments for command
+ */
+export function createCLI(
+  scriptsRoot: string,
+  pkg: {name: string, description: string, version: string},
+  argv: string[],
+) {
+  scriptsRoot = resolve(scriptsRoot);
+  const program = new Command();
+
+  interface IProgramOptions {
+    cwd?: string;
+  }
+
+  const setCwd = () => {
+    const options: IProgramOptions = program.opts() as any;
+    if (options.cwd) {
+      const cwd = resolve(options.cwd);
+      process.chdir(cwd);
+    }
+  };
+
+  program
+    .version(pkg.version)
+    .description(pkg.description)
+    .option("-C --cwd <path>", "change working directiory")
+  ;
+
+  const entries = readdirSync(scriptsRoot);
+  const regex = /^(\w[\w-]*)\.[jt]s/;
+  const scripts = entries.filter((e) => regex.test(e)).map((e) => regex.exec(e)![1]);
+  program
+    .command(`start [${scripts.join("|")}]`)
+    .description(`start one of the following scripts: ${scripts.join(", ")}`)
+    .action(setCwd)
+    .action((script, ...args) => {
+      if (scripts.includes(script)) {
+        return import(join(scriptsRoot, `${script}`));
+      }
+      const command: Command = args.pop();
+      command.help();
+    })
+  ;
+
+  const config = program
+    .command("config")
+    .description("manipulate configuration for program")
+    // .action(setCwd)
+    // .action((...args) => (args.pop() as Command).help())
+  ;
+
+  config
+    .command("set <path> <value>", "set value of given dot-seperated object-path")
+    .action(setCwd)
+  ;
+
+  config
+    .command("get <path>", "get value of given dot-seperated object-path")
+    .action(setCwd)
+  ;
+
+  config
+    .command("has <path>", "check if object-path leads to an value")
+    .action(setCwd)
+  ;
+
+  config
+    .command("delete <path>", "deletes value of given dot-seperated object-path")
+    .action(setCwd)
+  ;
+
+  config
+    .command("find <glob pattern>", "finds all keys matching pattern")
+    .action(setCwd)
+  ;
+
+  config
+    .command("reset", "reset configuration")
+    .action(setCwd)
+  ;
+
+  if (!process.argv.slice(2).length) {
+    program.help();
+  }
+  else {
+    program.parse(argv);
   }
 }
 
