@@ -66,12 +66,22 @@ export default class Program {
    * manually provided.
    */
   public readonly environment: string = process.env.NODE_ENV || "development";
+  public readonly name: string;
+  public readonly description: string;
+  public readonly version: string;
 
-  constructor(configName: string, options: IProgramOptions = {}) {
+  constructor(
+    pkg: {name: string, description: string, version: string},
+    options: IProgramOptions = {},
+    name?: string,
+  ) {
     if ("environment" in options && typeof options.environment === "string") {
       this.environment = options.environment;
     }
-    this[SymbolSettings] = new ConfigStore(configName, options.defaultSettings);
+    this.name = typeof name === "string" ? name : pkg.name;
+    this.version = pkg.version;
+    this.description = pkg.description;
+    this[SymbolSettings] = new ConfigStore(pkg.name, options.defaultSettings);
   }
 
   /**
