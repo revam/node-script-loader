@@ -5,10 +5,12 @@
 
 import { Command } from "commander";
 import * as ConfigStore from "configstore";
-import { readdirSync } from "fs";
-import { join, resolve } from "path";
+import { existsSync, readdirSync, readFileSync } from "fs";
+import { isAbsolute, join, resolve } from "path";
+import { inspect } from "util";
 
 const SymbolSettings = Symbol("settings");
+const SymbolDefaults = Symbol("defaults");
 
 /**
  * Value `T` is only truly available when awaited (or wrapped in Promise.resolve())
@@ -18,11 +20,11 @@ type Await<T> = T | Promise<T> | PromiseLike<T>;
  * Each startup handler is provided with the program that runs it, and a function to stop the program.
  * The safest way to shutdown here is to return after calling the provided stop function.
  */
-export type StartupHandler = (program: Program) => Await<ShutdownHandler | any>;
+export type StartupHandler = (program: Program) => Await<ShutdownHandler | void>;
 /**
  * Each shutdown handler is provied with the program that runs it.
  */
-export type ShutdownHandler = (program: Program) => any;
+export type ShutdownHandler = (program: Program) => Await<void>;
 /**
  * Handles any error thrown by startup/shutdown steps.
  */
@@ -33,13 +35,17 @@ export type ErrorHandler = (error: any) => any;
  */
 export interface IProgramOptions {
   /**
-   * Default settings for program.
+   * Default settings for program. Can also be an absolute path to a json file.
    */
   defaultSettings?: any;
   /**
    * Override environment.
    */
   environment?: string;
+  /**
+   * Override progam name.
+   */
+  name?: string;
 }
 
 /**
@@ -60,6 +66,8 @@ export default class Program {
   protected startupSteps: StartupHandler[] = [];
   /** @internal */
   private [SymbolSettings]: ConfigStore;
+  /** @internal */
+  private [SymbolDefaults]: object;
 
   /**
    * Current environment program was launched in. Collected from `$NODE_ENV` or
@@ -70,18 +78,38 @@ export default class Program {
   public readonly description: string;
   public readonly version: string;
 
-  constructor(
-    pkg: {name: string, description: string, version: string},
+  /**
+   * Creates a new `Program` instance.
+   * @param info Program information or an absolute path to a json file
+   *             containing that information.
+   * @param options Extra options
+   */
+  public constructor(
+    info: { name: string; description: string; version: string } | string,
     options: IProgramOptions = {},
-    name?: string,
   ) {
+    if (typeof info === "string") {
+      const json = readJSON<{ name: string; description: string; version: string }>(info);
+      if (!json) {
+        throw new Error("Invalid path to package.json");
+      }
+      info = json;
+    }
+    if (typeof options.defaultSettings === "string") {
+      const json = readJSON<IProgramOptions>(options.defaultSettings);
+      if (!json) {
+        throw new Error("Invalid path to settings file");
+      }
+      options.defaultSettings = json;
+    }
     if ("environment" in options && typeof options.environment === "string") {
       this.environment = options.environment;
     }
-    this.name = typeof name === "string" ? name : pkg.name;
-    this.version = pkg.version;
-    this.description = pkg.description;
-    this[SymbolSettings] = new ConfigStore(pkg.name, options.defaultSettings);
+    this.name = typeof options.name === "string" ? options.name : info.name;
+    this.version = info.version;
+    this.description = info.description;
+    this[SymbolDefaults] = options.defaultSettings || {};
+    this[SymbolSettings] = new ConfigStore(info.name, options.defaultSettings);
   }
 
   /**
@@ -176,6 +204,13 @@ export default class Program {
   }
 
   /**
+   * Resets all settings to defaults.
+   */
+  public resetSettings(): void {
+    this[SymbolSettings].all = { ...this[SymbolDefaults] };
+  }
+
+  /**
    * Add startup steps to preform for program. If one or more steps returns a
    * function, they will be added as shutdown steps, but at the start, and in
    * reverse order.
@@ -210,9 +245,9 @@ export default class Program {
    */
   public async start(): Promise<void> {
     try {
-      process.on("SIGINT", () => this.stop());
-      process.on("SIGTERM", () => this.stop());
-      const timeout =  this.getSetting("runtime.startupTimeout", 2000);
+      process.on("SIGINT", async() => this.stop());
+      process.on("SIGTERM", async() => this.stop());
+      const timeout = this.getSetting("runtime.startupTimeout", 2000);
       let step = 1;
       for (const fn of this.startupSteps) {
         const result = await rejectAfter(
@@ -234,63 +269,88 @@ export default class Program {
    * @param error Any reason for skipping the shutdown routine.
    */
   public async stop(error?: any): Promise<never> {
-    try {
-      if (error !== undefined) {
+    if (error !== undefined) {
+      try {
         const timeout = this.getSetting("runtime.shutdownTimeout", 2000);
         let step = 1;
         for (const fn of this.shutdownSteps) {
           await rejectAfter(fn(this), timeout, new Error(`Shutdown halted at step ${step++}`));
         }
+      } catch (err) {
+        error = err;
       }
-    } catch (err) {
-      error = err;
-    } finally {
-      if (error !== undefined) {
-        await this.onError(error);
-      }
-      return process.exit(error !== undefined ?
-        typeof error === "object" && typeof error.exitCode === "number" && error.exitCode || 1 : 0,
-      );
     }
+    if (error !== undefined) {
+      await this.onError(error);
+    }
+    return process.exit(error !== undefined ?
+      typeof error === "object" && typeof error.exitCode === "number" && error.exitCode || 1 : 0,
+    );
   }
+}
+
+export interface ICLIOptions {
+  /**
+   * Root folder for scripts.
+   */
+  scriptsRoot: string;
+  /**
+   * Progam information or an absolute path leading to a json file containing
+   * that information.
+   */
+  info: { name: string; description: string; version: string } | string;
+  /**
+   * Arguments to process.
+   */
+  argv: string[];
+  /**
+   * Default settings for program configuration/settings.
+   */
+  defaultSettings?: object | string;
 }
 
 /**
  * Creates a CLI for multiple scripts using the same config store.
- * @param scriptsRoot Folder containing scripts
- * @param pkg Package configuration
- * @param argv Arguments for command
+ *
+ * @param options Options for
  */
-export function createCLI(
-  scriptsRoot: string,
-  pkg: {name: string, description: string, version: string},
-  argv: string[],
-) {
+export function createCLI(options: ICLIOptions): void;
+export function createCLI({ scriptsRoot, info, argv, defaultSettings }: ICLIOptions): void {
   scriptsRoot = resolve(scriptsRoot);
-  const program = new Command();
-
-  interface IProgramOptions {
-    cwd?: string;
+  if (typeof info === "string") {
+    const json = readJSON<{ name: string; description: string; version: string }>(info);
+    if (!json) {
+      throw new Error("Invalid path to package.json");
+    }
+    info = json;
   }
-
+  if (typeof defaultSettings === "string") {
+    const json = readJSON<object>(defaultSettings);
+    if (!json) {
+      throw new Error("Invalid path to settings file");
+    }
+    defaultSettings = json;
+  }
+  const cmd = new Command();
+  const program = new Program(info, { defaultSettings });
   const setCwd = () => {
-    const options: IProgramOptions = program.opts() as any;
+    const options: { cwd?: string } = cmd.opts() as any;
     if (options.cwd) {
       const cwd = resolve(options.cwd);
       process.chdir(cwd);
     }
   };
 
-  program
-    .version(pkg.version)
-    .description(pkg.description)
+  cmd
+    .version(info.version)
+    .description(info.description)
     .option("-C --cwd <path>", "change working directiory")
   ;
 
   const entries = readdirSync(scriptsRoot);
-  const regex = /^(\w[\w-]*)\.[jt]s/;
+  const regex = /^(\w[\w-]+)\.[jt]s$/;
   const scripts = entries.filter((e) => regex.test(e)).map((e) => regex.exec(e)![1]);
-  program
+  cmd
     .command(`start [${scripts.join("|")}]`)
     .description(`start one of the following scripts: ${scripts.join(", ")}`)
     .action(setCwd)
@@ -303,57 +363,141 @@ export function createCLI(
     })
   ;
 
-  const config = program
+  const config = cmd
     .command("config")
+    .alias("settings")
     .description("manipulate configuration for program")
-    // .action(setCwd)
-    // .action((...args) => (args.pop() as Command).help())
+    .action(setCwd)
+    .action((...args) => {
+      if (args[0] instanceof Command) {
+        args[0].help();
+      }
+    })
   ;
 
+  const PARSE_IF_REGEX = /^([\[\{"]|-?[0-9]+)/;
   config
-    .command("set <path> <value>", "set value of given dot-seperated object-path")
-    .action(setCwd)
+    .command("set <path> [value]", "set value of given dot-seperated object-path")
+    .action((_, path, value) => {
+      if (_ !== "set") {
+        return;
+      }
+      try {
+        const type = typeof value;
+        if (type === "string" && PARSE_IF_REGEX.test(value)) {
+          value = JSON.parse(value);
+        } else if (type === "object") {
+          value = undefined;
+        }
+        program.setSetting(path, value);
+        logColor(program.getSetting(path));
+      } catch (error) {
+        console.error(error);
+      }
+    })
   ;
 
   config
     .command("get <path>", "get value of given dot-seperated object-path")
-    .action(setCwd)
+    .action((_, path) => {
+      if (_ !== "get") {
+        return;
+      }
+      try {
+        logColor(program.getSetting(path));
+      } catch (error) {
+        console.error(error);
+      }
+    })
   ;
 
   config
     .command("has <path>", "check if object-path leads to an value")
-    .action(setCwd)
+    .action((_, path) => {
+      if (_ !== "has") {
+        return;
+      }
+      try {
+        logColor(program.hasSetting(path));
+      } catch (error) {
+        console.error(error);
+      }
+    })
   ;
 
   config
     .command("delete <path>", "deletes value of given dot-seperated object-path")
-    .action(setCwd)
+    .action((_, path) => {
+      if (_ !== "delete") {
+        return;
+      }
+      try {
+        program.deleteSetting(path);
+      } catch (error) {
+        console.error(error);
+      }
+    })
   ;
 
   config
-    .command("find <glob pattern>", "finds all keys matching pattern")
-    .action(setCwd)
+    .command("list [path]", "lists all (sub-)config names for root or object-path")
+    .action((_, path) => {
+      if (_ !== "list") {
+        return;
+      }
+      if (typeof path === "string") {
+        const val = program.getSetting(path, {});
+        if (typeof val === "object") {
+          for (const [key, value] of Object.entries(val)) {
+            logColor({ key, type: typeof value });
+          }
+        }
+      } else {
+        for (const [key, value] of Object.entries(program[SymbolSettings].all)) {
+          logColor({ key, type: typeof value });
+        }
+      }
+    })
   ;
 
   config
-    .command("reset", "reset configuration")
-    .action(setCwd)
+    .command("reset", "reset configuration back to defaults")
+    .action((_) => {
+      if (_ !== "reset") {
+        return;
+      }
+      try {
+        program.resetSettings();
+      } catch (error) {
+        console.error(error);
+      }
+    })
   ;
 
   if (!process.argv.slice(2).length) {
-    program.help();
+    cmd.help();
   }
   else {
-    program.parse(argv);
+    cmd.parse(argv);
   }
 }
 
 /**
  * Rejects `promise` after `delay`.
  */
-function rejectAfter<T>(promise: Await<T>, delay: number = 1000, error?: any) {
+async function rejectAfter<T>(promise: Await<T>, delay: number = 1000, error?: any) {
   return Promise.race<T>([
     promise,
     new Promise((_, reject) => setTimeout(reject, delay, error)),
   ]);
+}
+
+function readJSON<T>(path: string): T | undefined {
+  if (isAbsolute(path) && existsSync(path)) {
+    return JSON.parse(readFileSync(path, "utf8"));
+  }
+}
+
+function logColor(message) {
+  console.log(inspect(message, { colors: true }));
 }
