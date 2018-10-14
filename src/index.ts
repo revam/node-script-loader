@@ -269,7 +269,7 @@ export default class Program {
    * @param error Any reason for skipping the shutdown routine.
    */
   public async stop(error?: any): Promise<never> {
-    if (error !== undefined) {
+    if (error === undefined) {
       try {
         const timeout = this.getSetting("runtime.shutdownTimeout", 2000);
         let step = 1;

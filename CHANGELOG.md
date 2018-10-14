@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.1.2] - 2018-10-14
+
+### Fixed
+
+- Shutdown steps was not ran because of a typo.
+
 ## [0.1.1] - 2018-10-13
 
 ### Added
@@ -55,5 +61,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Initial release
 
-[Unreleased]: http://git.lan/mist/node-program/compare/v0.1.1...HEAD
+[Unreleased]: http://git.lan/mist/node-program/compare/v0.1.2...HEAD
+[0.1.2]: http://git.lan/mist/node-program/compare/v0.1.1...v0.1.2
 [0.1.1]: http://git.lan/mist/node-program/compare/v0.1.0...v0.1.1
