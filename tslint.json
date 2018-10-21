@@ -120,6 +120,7 @@
     "completed-docs": false,
     "no-any": false,
     "no-unsafe-any": false,
+    "no-inferrable-types": false,
     "no-inferred-empty-object-type": false,
     "no-non-null-assertion": false,
     "no-null-keyword": false,

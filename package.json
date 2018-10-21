@@ -1,6 +1,6 @@
 {
   "name": "script-loader",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "Create startup/shutdown routines for scripts",
   "main": "lib/index.js",
@@ -19,7 +19,7 @@
     "prebuild:dev": "npm run lint:src",
     "prebuild:docs": "npm run lint:docs",
     "pretest": "npm run lint:test",
-    "prepublish": "npm run cleanup && npm run build"
+    "prepare": "npm run cleanup && npm run build"
   },
   "keywords": [
     "program",
