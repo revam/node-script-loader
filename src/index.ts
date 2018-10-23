@@ -64,6 +64,11 @@ export default class ScriptLoader {
   protected isShutdownRunning: boolean = false;
 
   /**
+   * Environment variables for settings is prefixed with this string.
+   */
+  protected envPrefix?: string;
+
+  /**
    * Name of script collection.
    */
   public readonly name: string;
@@ -104,20 +109,22 @@ export default class ScriptLoader {
 
   public constructor(options?: IScriptLoaderOptions);
   public constructor({
+    collection = "./package.json",
     configPath,
     defaultSettings,
-    info = "./package.json",
+    onError,
     resolveFrom = "",
-    scriptDescription = "",
-    scriptName = "<anonymus script>",
+    script = {},
+    shutdownSteps,
+    startupSteps,
   }: IScriptLoaderOptions = {}) {
     resolveFrom = resolve(resolveFrom);
-    if (typeof info === "string") {
-      const json = readJSON<ScriptCollectionInfo>(info);
+    if (typeof collection === "string") {
+      const json = readJSON<ScriptCollectionInfo>(collection);
       if (!json) {
         throw new Error("Invalid path to package.json");
       }
-      info = json;
+      collection = json;
     }
     if (typeof defaultSettings === "string") {
       const json = readJSON<object>(defaultSettings);
@@ -127,22 +134,32 @@ export default class ScriptLoader {
       defaultSettings = json;
     }
 
-    const configStore = new ConfigStore(info.name, undefined, { globalConfigPath: true });
+    const configStore = new ConfigStore(collection.name, undefined, { globalConfigPath: true });
     if (configPath) {
       configStore.path = resolve(resolveFrom, configPath);
     }
     if (defaultSettings) {
       configStore.all = {...defaultSettings, ...configStore.all};
     }
+    if (typeof onError === "function") {
+      this.setErrorHandler(onError);
+    }
+    if (typeof shutdownSteps === "object" && Symbol.iterator in shutdownSteps) {
+      this.addShutdownSteps(...shutdownSteps);
+    }
+    if (typeof startupSteps === "object" && Symbol.iterator in startupSteps) {
+      this.addStartupSteps(...startupSteps);
+    }
 
-    this.name = info.name;
-    this.version = info.version;
-    this.description = info.description;
-    this.environment = this.getSettingOrEnv("runtime.environment", process.env.NODE_ENV || "development");
-    this.scriptName = scriptName;
-    this.scriptDescription = scriptDescription;
     this[SymbolDefaultSettings] = defaultSettings || {};
     this[SymbolSettings] = configStore;
+    this.name = collection.name;
+    this.version = collection.version;
+    this.description = collection.description;
+    this.environment = this.getSettingOrEnv("runtime.environment", process.env.NODE_ENV || "development");
+    const {name: scriptName = "", description: scriptDescription = ""} = script;
+    this.scriptName = scriptName;
+    this.scriptDescription = scriptDescription;
   }
 
   //#endregion constructor
@@ -295,7 +312,7 @@ export default class ScriptLoader {
    */
   public getSettingOrEnv<T>(path: string, default_value: T): T;
   public getSettingOrEnv<T>(path: string, default_value?: T): T | undefined {
-    const env = pathToEnv(path);
+    const env = pathToEnv(path, this.envPrefix);
     if (env in process.env) {
       return parseInput(process.env[env]);
     }
@@ -377,7 +394,7 @@ export default class ScriptLoader {
   }
 
   /**
-   * Run startup script(-s).
+   * Run startup routine.
    *
    * If any errors occur, it will abort the procedure and stop the loader.
    * It will NEVER ever throw, but will instead pass the error to the pre-set
@@ -388,6 +405,7 @@ export default class ScriptLoader {
     if (this.isRunning || this.isShutdownRunning) {
       return;
     }
+    (this.isRunning as boolean) = true;
     try {
       if (attach) {
         process.on("SIGINT", async() => this.stop());
@@ -407,19 +425,17 @@ export default class ScriptLoader {
           this.shutdownSteps.unshift(result);
         }
       }
-      (this.isRunning as boolean) = true;
     } catch (error) {
       return this.stop(error);
     }
   }
 
   /**
-   * Run shutdown script(-s).
+   * Run shutdown routine.
    *
    * If any error is provided as an argument or occurs under the shutdown steps,
    * then the rest of the steps is skipped and the pre-set error handler is
    * called with the error.
-   *
    * @param error Any reason for skipping the shutdown routine.
    */
   public async stop(error?: any): Promise<never> {
@@ -449,6 +465,20 @@ export default class ScriptLoader {
   }
 
   //#endregion methods
+  //#region static methods
+
+  /**
+   * Initialise a new instance and run its startup routine.
+   * @param options Constructor options
+   * @param attach Attach handlers to global process.
+   */
+  public static async start(options: IScriptLoaderOptions, attach?: boolean): Promise<ScriptLoader | never> {
+    const loader = new ScriptLoader(options);
+    await loader.start(attach);
+    return loader;
+  }
+
+  //#endregion static methods
 }
 
 //#endregion classes
@@ -464,14 +494,14 @@ export function createCLI({
   argv,
   configPath,
   defaultSettings,
-  info,
+  collection,
   resolveFrom = "",
   scriptsRoot = "./scripts",
 }: ICLIOptions): void {
   resolveFrom = resolve(resolveFrom);
   scriptsRoot = resolve(resolveFrom, scriptsRoot);
   const program = new Command();
-  const loader = new ScriptLoader({ configPath, defaultSettings, info, resolveFrom });
+  const loader = new ScriptLoader({ configPath, defaultSettings, collection, resolveFrom });
   const setCwd = () => {
     const options: { cwd?: string } = program.opts() as any;
     if (options.cwd) {
@@ -647,8 +677,8 @@ function parseInput<T = string>(input?: string): T | undefined {
   }
 }
 
-function pathToEnv(path: string): string {
-  return path.replace(/[-\.]/g, "_").toUpperCase();
+function pathToEnv(path: string, prefix: string = ""): string {
+  return `${prefix}${path.replace(/[-\.]/g, "_").toUpperCase()}`;
 }
 
 //#endregion functions
@@ -682,6 +712,12 @@ type Await<T> = T | Promise<T> | PromiseLike<T>;
 
 export interface IScriptLoaderOptions {
   /**
+   * Either an object with the collection info, or a path to a JSON-file
+   * containing said info. The path can either be relative to `resolveFrom` or
+   * absolute.
+   */
+  collection?: ScriptCollectionInfo | string;
+  /**
    * Where to store config. The path can either be relative to `resolveFrom` or
    * absolute.
    *
@@ -695,24 +731,30 @@ export interface IScriptLoaderOptions {
    */
   defaultSettings?: object | string;
   /**
-   * Either an object with the collection info, or a path to a JSON-file
-   * containing said info. The path can either be relative to `resolveFrom` or
-   * absolute.
+   * Handles error thrown in either startup or shutdown routines.
    */
-  info?: ScriptCollectionInfo | string;
+  onError?: ErrorHandler;
+  /**
+   * Prefix environment variables for settings with this string.
+   */
+  prefixEnv?: string;
   /**
    * Where to resolve paths from.
    * Defaults to current working directory.
    */
   resolveFrom?: string;
   /**
-   * Provide a description for current script.
+   * Provide information for current script.
    */
-  scriptDescription?: string;
+  script?: ScriptInfo;
   /**
-   * Provide a name for current script.
+   * Pre-set any steps for shutdown routine.
    */
-  scriptName?: string;
+  shutdownSteps?: ShutdownHandler[] | Iterable<ShutdownHandler> | IterableIterator<ShutdownHandler>;
+  /**
+   * Pre-set any steps for startup routine.
+   */
+  startupSteps?: StartupHandler[] | Iterable<StartupHandler> | IterableIterator<StartupHandler>;
 }
 
 export interface ICLIOptions {
@@ -721,6 +763,12 @@ export interface ICLIOptions {
    */
   argv: string[];
   /**
+   * Either an object with the collection info, or a path to a JSON-file
+   * containing said info. The path can either be relative to `resolveFrom` or
+   * absolute.
+   */
+  collection?: ScriptCollectionInfo | string;
+  /**
    * Where to store config. The path can either be relative to `resolveFrom` or
    * absolute.
    *
@@ -734,11 +782,9 @@ export interface ICLIOptions {
    */
   defaultSettings?: object | string;
   /**
-   * Either an object with the collection info, or a path to a JSON-file
-   * containing said info. The path can either be relative to `resolveFrom` or
-   * absolute.
+   * Prefix environment variables for settings with this string.
    */
-  info?: ScriptCollectionInfo | string;
+  prefixEnv?: string;
   /**
    * Resolves relative paths relative to this value.
    */
@@ -747,6 +793,17 @@ export interface ICLIOptions {
    * Root folder for scripts.
    */
   scriptsRoot?: string;
+}
+
+interface ScriptInfo {
+  /**
+   * Provide a name for current script.
+   */
+  name?: string;
+  /**
+   * Provide a description for current script.
+   */
+  description?: string;
 }
 
 interface ScriptCollectionInfo {

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.2.1] - 2018-10-23
+
+### Added
+
+- To make it easier to use, we can now supply the startup/shutdown steps
+  directly to the constructor.
+
+- Added a static method `start(options?, attach?)`, to initialise a new loader
+  and start it. It will only resolve if no error took place. You can supply it
+  with any constructor options and a boolean for attaching events to process.
+
+### Changed
+
+- Also, to prevent conflicts with environment variables for other programs you
+  can now prefix any variables the loader looks for.
+
+- Changed some other property names for constructor options. See code.
+
+- Updated examples.
+
+- Some more tweaks you can check in the commit log...
+
+### Fixed
+
+- Failed to initialise because a method in constructor was called before the
+  loader was ready to use the method.
+
+- Failed to stop if start threw an error because it was not 'running' _yet_.
+
 ## [0.2.0] - 2018-10-21
 
 ### Added
@@ -103,7 +132,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Initial release
 
-[Unreleased]: https://github.com/revam/node-script-loader/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/revam/node-script-loader/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/revam/node-script-loader/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/revam/node-script-loader/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/revam/node-script-loader/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/revam/node-script-loader/compare/v0.1.0...v0.1.1
