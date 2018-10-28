@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.2.2] - 2018-10-28
+
+### Added
+
+- You can now supply the prefix for environment variables under the setting
+  `runtime.envPrefix`.
+
+- You can now supply induvidual timeouts for each step in both startup and
+  shutdown routines.
+
+- Added explaination for runtime settings for loader in readme and note for the
+  cli interface.
+
+### Changed
+
+- Changed 'version' to 'release' in install section in readme.
+
+### Fixed
+
+- Prefix supplied to constructor was not used by loader.
+
 ## [0.2.1] - 2018-10-23
 
 ### Added
@@ -20,7 +41,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- Also, to prevent conflicts with environment variables for other programs you
+- To prevent conflicts with environment variables for other programs you
   can now prefix any variables the loader looks for.
 
 - Changed some other property names for constructor options. See code.
@@ -132,7 +153,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 - Initial release
 
-[Unreleased]: https://github.com/revam/node-script-loader/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/revam/node-script-loader/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/revam/node-script-loader/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/revam/node-script-loader/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/revam/node-script-loader/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/revam/node-script-loader/compare/v0.1.1...v0.1.2

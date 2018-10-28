@@ -6,7 +6,7 @@ Create startup/shutdown routines for scripts.
 
 Install from github:
 
-**Spesific version:**
+**Spesific release:**
 
 ```sh
 $ npm install --save https://github.com/revam/node-script-loader/releases/download/v$VERSION/package.tgz
@@ -20,11 +20,30 @@ Install from git.lan (Internet people can ignore this):
 $ npm install --save https://git.lan/mist@node/script-loader@latest/npm-pack.tgz
 ```
 
-**Spesific version:**
+**Spesific release:**
 
 ```sh
 $ npm install --save https://git.lan/mist@node/script-loader@v$VERSION/npm-pack.tgz
 ```
+
+## Predefined settings
+
+- `runtime` - Object (settings group) reserved for loader.
+  - `environment` - Controll the environment the loader is launched in. Defaults
+                    to the value of the `NODE_ENV` variable or `"development"`
+                    if it is not set.
+                    Overriden by the `*RUNTIME_ENVIRONMENT` variable,
+                    where `*` is the prefix used, if present.
+  - `envPrefix` - Controll the prefix used when finding matching variables for
+                  settings.
+  - `startupTimeout` - Default timeout for each step in startup routine given in
+                       miliseconds. Defaults to `5000`.
+                       Overriden by the `*RUNTIME_STARTUPTIMEOUT` variable,
+                       where `*` is the prefix used, if present.
+  - `shutdownTimeout` - Default timeout for each step in shutdown routine, given
+                        in miliseconds. Defaults to `5000`;
+                        Overriden by the `*RUNTIME_SHUTDOWNTIMEOUT` variable,
+                        where `*` is the prefix used, if present.
 
 ## Usage
 
@@ -137,6 +156,9 @@ new Loader()
 ```
 
 CLI creator:
+
+**Note:** Does not have a _stable_ interface yet. The interface may change
+between any release.
 
 ```js
 import { createCLI } from "script-loader";

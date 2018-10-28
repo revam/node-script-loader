@@ -46,12 +46,12 @@ export default class ScriptLoader {
   /**
    * Steps to preform at shutdown.
    */
-  protected shutdownSteps: ShutdownHandler[] = [];
+  protected shutdownSteps: Array<[ShutdownHandler, number?]> = [];
 
   /**
    * Steps to preform at startup.
    */
-  protected startupSteps: StartupHandler[] = [];
+  protected startupSteps: Array<[StartupHandler, number?]> = [];
 
   /**
    * Check if startup scripts is running or has ran.
@@ -66,7 +66,7 @@ export default class ScriptLoader {
   /**
    * Environment variables for settings is prefixed with this string.
    */
-  protected envPrefix?: string;
+  protected readonly envPrefix: string;
 
   /**
    * Name of script collection.
@@ -113,6 +113,7 @@ export default class ScriptLoader {
     configPath,
     defaultSettings,
     onError,
+    prefixEnv,
     resolveFrom = "",
     script = {},
     shutdownSteps,
@@ -156,6 +157,7 @@ export default class ScriptLoader {
     this.name = collection.name;
     this.version = collection.version;
     this.description = collection.description;
+    this.envPrefix = prefixEnv || this.getSetting("runtime.prefixEnvironment", "");
     this.environment = this.getSettingOrEnv("runtime.environment", process.env.NODE_ENV || "development");
     const {name: scriptName = "", description: scriptDescription = ""} = script;
     this.scriptName = scriptName;
@@ -367,20 +369,23 @@ export default class ScriptLoader {
    * Add startup steps to preform for program. If one or more steps returns a
    * function, they will be added as shutdown steps, but at the start, and in
    * reverse order.
-   * @param steps Steps to add
+   * @param steps Steps to add. If supplied with an array, then expects the
+   *              first item to be the handler and the second to be the timeout.
    * @returns this, so it is chainable
    */
-  public addStartupSteps(...steps: StartupHandler[]): this {
-    this.startupSteps.push(...steps);
+  public addStartupSteps(...steps: Array<StartupHandler | [StartupHandler, number?]>): this {
+    this.startupSteps.push(...steps.map<[StartupHandler, number?]>((s) => s instanceof Array ? s : [s]));
     return this;
   }
 
   /**
    * Add shutdown steps to preform for program.
-   * @param steps Steps to add
+   * @param steps Steps to add. If supplied with an array, then expects the
+   *              first item to be the handler and the second to be the timeout.
+   * @returns this, so it is chainable
    */
-  public addShutdownSteps(...steps: ShutdownHandler[]): this {
-    this.shutdownSteps.push(...steps);
+  public addShutdownSteps(...steps: Array<ShutdownHandler | [ShutdownHandler, number?]>): this {
+    this.shutdownSteps.push(...steps.map<[ShutdownHandler, number?]>((s) => s instanceof Array ? s : [s]));
     return this;
   }
 
@@ -412,16 +417,19 @@ export default class ScriptLoader {
         process.on("SIGTERM", async() => this.stop());
         process.stdin.on("end", async() => this.stop());
       }
-      const timeout = this.getSetting("runtime.startupTimeout", 2000);
+      const default_timeout = this.getSettingOrEnv("runtime.startupTimeout", 2000);
       let step = 0;
       const length = this.startupSteps.length;
-      for (const fn of this.startupSteps) {
+      for (const [fn, timeout = default_timeout] of this.startupSteps) {
         const result = await rejectAfter(
           fn(this, step, length),
           timeout,
           new Error(`Startup halted at step ${step++}`),
         );
         if (typeof result === "function") {
+          this.shutdownSteps.unshift([result]);
+        }
+        if (typeof result === "object" && result instanceof Array) {
           this.shutdownSteps.unshift(result);
         }
       }
@@ -446,10 +454,10 @@ export default class ScriptLoader {
     (this.isShutdownRunning as boolean) = true;
     if (error === undefined) {
       try {
-        const timeout = this.getSetting("runtime.shutdownTimeout", 2000);
+        const default_timeout = this.getSettingOrEnv("runtime.shutdownTimeout", 2000);
         let step = 0;
         const length = this.shutdownSteps.length;
-        for (const fn of this.shutdownSteps) {
+        for (const [fn, timeout = default_timeout] of this.shutdownSteps) {
           await rejectAfter(fn(this, step, length), timeout, new Error(`Shutdown halted at step ${step++}`));
         }
       } catch (err) {
@@ -677,7 +685,7 @@ function parseInput<T = string>(input?: string): T | undefined {
   }
 }
 
-function pathToEnv(path: string, prefix: string = ""): string {
+function pathToEnv(path: string, prefix: string): string {
   return `${prefix}${path.replace(/[-\.]/g, "_").toUpperCase()}`;
 }
 
@@ -689,7 +697,7 @@ function pathToEnv(path: string, prefix: string = ""): string {
  * The safest way to shutdown here is to return after calling the provided stop function.
  */
 export type StartupHandler = (program: ScriptLoader, stepIndex: number, totalSteps: number)
-  => Await<ShutdownHandler | void>;
+  => Await<ShutdownHandler | [ShutdownHandler, number?] | void>;
 
 /**
  * Each shutdown handler is provied with the program that runs it.
