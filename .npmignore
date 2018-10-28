@@ -1,0 +1,11 @@
+node_modules/
+src/
+test/
+.env
+*.log
+ts*.json
+.vscode/
+*.tar
+*.tar.gz
+*.tar.xz
+*.tgz
