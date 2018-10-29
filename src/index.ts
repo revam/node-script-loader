@@ -121,14 +121,14 @@ export default class ScriptLoader {
   }: IScriptLoaderOptions = {}) {
     resolveFrom = resolve(resolveFrom);
     if (typeof collection === "string") {
-      const json = readJSON<ScriptCollectionInfo>(collection);
+      const json = readJSON<ScriptCollectionInfo>(join(resolveFrom, collection));
       if (!json) {
         throw new Error("Invalid path to package.json");
       }
       collection = json;
     }
     if (typeof defaultSettings === "string") {
-      const json = readJSON<object>(defaultSettings);
+      const json = readJSON<object>(join(resolveFrom, defaultSettings));
       if (!json) {
         throw new Error("Invalid path to settings file");
       }
@@ -137,7 +137,7 @@ export default class ScriptLoader {
 
     const configStore = new ConfigStore(collection.name, undefined, { globalConfigPath: true });
     if (configPath) {
-      configStore.path = resolve(resolveFrom, configPath);
+      configStore.path = join(resolveFrom, configPath);
     }
     if (defaultSettings) {
       configStore.all = {...defaultSettings, ...configStore.all};
@@ -159,9 +159,7 @@ export default class ScriptLoader {
     this.description = collection.description;
     this.envPrefix = prefixEnv || this.getSetting("runtime.prefixEnvironment", "");
     this.environment = this.getSettingOrEnv("runtime.environment", process.env.NODE_ENV || "development");
-    const {name: scriptName = "", description: scriptDescription = ""} = script;
-    this.scriptName = scriptName;
-    this.scriptDescription = scriptDescription;
+    this.setScriptInfo(script);
   }
 
   //#endregion constructor
@@ -395,6 +393,18 @@ export default class ScriptLoader {
    */
   public setErrorHandler(onError: ErrorHandler): this {
     this.onError = onError;
+    return this;
+  }
+
+  /**
+   * Set script info.
+   * @param info Info to set
+   */
+  public setScriptInfo(info: ScriptInfo): this {
+    // tslint:disable-next-line:no-unnecessary-type-assertion
+    (this.scriptDescription as string) = info.description || "";
+    // tslint:disable-next-line:no-unnecessary-type-assertion
+    (this.scriptName as string) = info.name || "";
     return this;
   }
 
